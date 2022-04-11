@@ -2,7 +2,7 @@ vpyapp.py: Standalone virtualized Python app installer
 ===================================================
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Latest release](https://img.shields.io/github/v/release/sammck/secret-kv.svg?style=flat-square&color=b44e88)](https://github.com/sammck/secret-kv/releases)
+[![Latest release](https://img.shields.io/github/v/release/sammck/vpyapp.svg?style=flat-square&color=b44e88)](https://github.com/sammck/vpyapp/releases)
 
 `vpyapp.py` is a simple, single-file script that can be sourced with curl to bootstrap installation
 and launching of of cached virtualized python applications.
