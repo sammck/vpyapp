@@ -249,12 +249,17 @@ class Cli:
   def project_init_helper_prog(self) -> str:
     return os.path.join(self.app_bin_dir, 'project-init-helper')
 
+  def remove_appdir(self) -> None:
+    if os.path.exists(self.package_spec_filename):
+      os.remove(self.package_spec_filename)
+    if os.path.exists(self.app_dir):
+      subprocess.call(['rm', '-fr', self.app_dir])
+
   def do_install(
       self,
       package_spec: str,
       update: bool,
       clean: bool,
-      app_cmd_prog: Optional[str] = None,
       stdout: Any = sys.stdout,
       stderr: Any = sys.stderr,
       ) -> str:
@@ -262,63 +267,56 @@ class Cli:
     package_spec = self.package_spec
     app_dir = self.app_dir
     app_venv_dir = self.app_venv_dir
-    app_bin_dir = self.app_bin_dir
-
-    if not app_cmd_prog is None:
-      app_cmd_prog = os.path.abspath(
-          os.path.join(
-              app_bin_dir, os.path.normpath(
-                  os.path.expanduser(app_cmd_prog)
-                )
-            )
-        )
-    app_cmd_prog_exists = app_cmd_prog is not None and os.path.exists(app_cmd_prog)
-    created_appdir = False
 
     try:
+      python = self.python_prog
+      pip = self.pip_prog
+      if (
+            clean or
+            not os.path.exists(self.package_spec_filename) or 
+            not os.path.exists(python) or 
+            not os.path.exists(pip)
+          ):
+        self.remove_appdir()
       if not os.path.isdir(app_dir):
-        created_appdir = True
         os.makedirs(app_dir)
 
-      if clean or not os.path.exists(self.package_spec_filename):
-        with open(self.package_spec_filename, 'w', encoding='utf-8') as f:
-          f.write(self.package_spec)
-
-      if update or clean or not app_cmd_prog_exists:
-
+      is_updated_venv = False
+      if update or not os.path.exists(app_venv_dir):
         builder = venv.EnvBuilder(
             clear=clean,
           )
         builder.create(app_venv_dir)
+        is_updated_venv = True
         
-        python = self.python_prog
-        pip = self.pip_prog
-        no_venv_env = self.no_venv_env
+      no_venv_env = self.no_venv_env
 
-        if update or not os.path.exists(pip):
-          cmd = [python, '-m', 'ensurepip']
-          if update:
-            cmd.append('--upgrade')
-          subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+      if update or not os.path.exists(pip):
+        cmd = [python, '-m', 'ensurepip']
+        if update:
+          cmd.append('--upgrade')
+        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
 
-        if update or not app_cmd_prog_exists:
-          cmd = [pip, 'install']
-          if update:
-            cmd.append('--upgrade')
-          cmd.append('wheel')
-          subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+      if update or is_updated_venv:
+        cmd = [pip, 'install']
+        if update:
+          cmd.append('--upgrade')
+        cmd.append('wheel')
+        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
 
-          cmd = [pip, 'install']
-          if update:
-            cmd.append('--upgrade')
-          cmd.append(self.package_spec)
-          subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+        cmd = [pip, 'install']
+        if update:
+          cmd.append('--upgrade')
+        cmd.append(self.package_spec)
+        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+      if not os.path.exists(self.package_spec_filename):
+        with open(self.package_spec_filename, 'w', encoding='utf-8') as f:
+          f.write(self.package_spec)
     except Exception:
-      if created_appdir:
-        try:
-          os.rmdir(app_dir)
-        except Exception:
-          pass
+      try:
+        self.remove_appdir()
+      except Exception:
+        pass
       raise
 
     return app_dir
@@ -348,13 +346,11 @@ class Cli:
     clean: bool = args.install_clean
     package_spec: str = args.package_name
     app_cmd: List[str] = args.app_cmd
-    app_cmd_prog = app_cmd[0] if len(app_cmd) > 0 else None 
     if self.verbose:
       self.do_install(
           package_spec,
           update=update,
           clean=clean,
-          app_cmd_prog=app_cmd_prog,
         )
     else:
       with tempfile.NamedTemporaryFile() as f_install_log:
@@ -363,7 +359,6 @@ class Cli:
               package_spec,
               update=update,
               clean=clean,
-              app_cmd_prog=app_cmd_prog,
               stdout=f_install_log,
               stderr=subprocess.STDOUT
             )
@@ -407,7 +402,7 @@ class Cli:
     return 0
 
   def cmd_locate(self) -> int:
-    self.package_spec = self.args.package_spec
+    self.package_spec = self.args.package_name
     app_dir = self.app_dir
     if not os.path.exists(app_dir):
       raise CmdExitError(msg=f"Package is not installed (must match exactly): {self.package_spec}")
@@ -415,7 +410,7 @@ class Cli:
     return 0
 
   def cmd_uninstall(self) -> int:
-    self.package_spec = self.args.package_spec
+    self.package_spec = self.args.package_name
     app_dir = self.app_dir
     if not os.path.exists(app_dir):
       raise CmdExitError(msg=f"Package is not installed (must match exactly): {self.package_spec}")
