@@ -1,15 +1,35 @@
 #!/usr/bin/env python3
 #
-# Copyright (c) 2022 Samuel J. McKelvie
+# MIT License
 #
-# MIT License - See LICENSE file accompanying this package.
+# Copyright (c) 2022 Sam McKelvie
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 #
 
 """
 Standalone python script (no dependencies other than standard python 3.7+) that
 can create and manage a per-app virtualenv under ~/.local/cache and install a python app in it.
-Suitable for running as a piped script from curl.
+Suitable for running as a piped script from curl. See https://github.com/sammck/vpyapp.
 """
+
+__version__ = "0.1.0"
 
 from typing import (
     Optional,
@@ -25,10 +45,12 @@ import sys
 import os
 import re
 import pathlib
+from unittest import result
 from urllib.parse import urlparse, ParseResult, urlunparse, unquote as url_unquote
 import subprocess
 import venv
 import tempfile
+import hashlib
 
 def searchpath_split(searchpath: Optional[str]=None) -> List[str]:
   if searchpath is None:
@@ -142,7 +164,8 @@ class Cli:
   argv: Optional[Sequence[str]] = None
   verbose: bool = False
   args: argparse.Namespace
-  _app_name: Optional[str] = None
+  _package_spec: Optional[str] = None
+  _package_spec_hash: Optional[str] = None
   _no_venv_env: Optional[Dict[str, str]] = None
   _venv_env: Optional[Dict[str, str]] = None
 
@@ -153,13 +176,41 @@ class Cli:
     raise CmdExitError(msg="A subcommand is required")
 
   @property
-  def app_name(self) -> str:
-    assert not self._app_name is None
-    return self._app_name
+  def package_spec(self) -> str:
+    assert not self._package_spec is None
+    return self._package_spec
+
+  def normalize_package_spec(self, package_spec: str) -> str:
+    if not ':' in package_spec and (
+          '/' in package_spec or '#' in package_spec or package_spec.endswith('.gz')
+        ):
+      pathname = os.path.abspath(os.path.normpath(os.path.expanduser(package_spec)))
+      package_spec = pathlib.Path(pathname).as_uri()
+
+    return package_spec
+
+  @package_spec.setter
+  def package_spec(self, spec: str) -> str:
+    spec = self.normalize_package_spec(spec)
+    assert self._package_spec is None or self._package_spec == spec
+    self._package_spec = spec
+    return self._package_spec
+
+  @property
+  def package_spec_hash(self) -> str:
+    if self._package_spec_hash is None:
+      package_spec = self.package_spec
+      h = hashlib.sha1(package_spec.encode('utf-8'))
+      self._package_spec_hash = h.hexdigest()
+    return self._package_spec_hash
 
   @property
   def app_dir(self) -> str:
-    return os.path.join(self.apps_dir, self.app_name)
+    return os.path.join(self.apps_dir, self.package_spec_hash)
+
+  @property
+  def package_spec_filename(self) -> str:
+    return os.path.join(self.app_dir, "package-spec.txt")
 
   @property
   def app_venv_dir(self) -> str:
@@ -198,81 +249,77 @@ class Cli:
   def project_init_helper_prog(self) -> str:
     return os.path.join(self.app_bin_dir, 'project-init-helper')
 
-  @classmethod
-  def package_name_from_package_spec(self, package_spec: str):
-    package_name = package_spec
-    if 'egg=' in package_name:
-      package_name = package_name.rsplit('egg=', 1)[1]
-    if '@' in package_name:
-      package_name = package_name.split('@', 1)[0]
-    if '==' in package_name:
-      package_name = package_name.split('==', 1)[0]
-    if '[' in package_name:
-      package_name = package_name.split('[', 1)[0]
-    if package_name.endswith('.tar.gz'):
-      package_name = package_name[:-7]
-    if package_name.endswith('.git'):
-      package_name = package_name[:-7]
-    if '/' in package_name:
-      package_name = package_name.rsplit('/', 1)[1]
-    if package_name == '' or '.' in package_name or '#' in package_name:
-      raise ValueError(f"Unable to determine package name from package spec: {package_spec}")
-    return package_name
-
   def do_install(
       self,
-      package: str,
-      app_name: Optional[str],
+      package_spec: str,
       update: bool,
       clean: bool,
       app_cmd_prog: Optional[str] = None,
       stdout: Any = sys.stdout,
       stderr: Any = sys.stderr,
       ) -> str:
-    if app_name is None:
-      app_name = self.package_name_from_package_spec(package)
-
-    self._app_name = app_name
-
+    self.package_spec = package_spec
+    package_spec = self.package_spec
     app_dir = self.app_dir
     app_venv_dir = self.app_venv_dir
     app_bin_dir = self.app_bin_dir
 
     if not app_cmd_prog is None:
-      app_cmd_prog = os.path.abspath(os.path.join(app_bin_dir, os.path.normpath(os.path.expanduser(app_cmd_prog))))
+      app_cmd_prog = os.path.abspath(
+          os.path.join(
+              app_bin_dir, os.path.normpath(
+                  os.path.expanduser(app_cmd_prog)
+                )
+            )
+        )
     app_cmd_prog_exists = app_cmd_prog is not None and os.path.exists(app_cmd_prog)
+    created_appdir = False
 
-    if update or clean or not app_cmd_prog_exists:
+    try:
       if not os.path.isdir(app_dir):
+        created_appdir = True
         os.makedirs(app_dir)
 
-      builder = venv.EnvBuilder(
-          clear=clean,
-        )
-      builder.create(app_venv_dir)
-      
-      python = self.python_prog
-      pip = self.pip_prog
-      no_venv_env = self.no_venv_env
+      if clean or not os.path.exists(self.package_spec_filename):
+        with open(self.package_spec_filename, 'w', encoding='utf-8') as f:
+          f.write(self.package_spec)
 
-      if update or not os.path.exists(pip):
-        cmd = [python, '-m', 'ensurepip']
-        if update:
-          cmd.append('--upgrade')
-        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+      if update or clean or not app_cmd_prog_exists:
 
-      if update or not app_cmd_prog_exists:
-        cmd = [pip, 'install']
-        if update:
-          cmd.append('--upgrade')
-        cmd.append('wheel')
-        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+        builder = venv.EnvBuilder(
+            clear=clean,
+          )
+        builder.create(app_venv_dir)
+        
+        python = self.python_prog
+        pip = self.pip_prog
+        no_venv_env = self.no_venv_env
 
-        cmd = [pip, 'install']
-        if update:
-          cmd.append('--upgrade')
-        cmd.append(package)
-        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+        if update or not os.path.exists(pip):
+          cmd = [python, '-m', 'ensurepip']
+          if update:
+            cmd.append('--upgrade')
+          subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+
+        if update or not app_cmd_prog_exists:
+          cmd = [pip, 'install']
+          if update:
+            cmd.append('--upgrade')
+          cmd.append('wheel')
+          subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+
+          cmd = [pip, 'install']
+          if update:
+            cmd.append('--upgrade')
+          cmd.append(self.package_spec)
+          subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+    except Exception:
+      if created_appdir:
+        try:
+          os.rmdir(app_dir)
+        except Exception:
+          pass
+      raise
 
     return app_dir
 
@@ -280,11 +327,14 @@ class Cli:
     args = self.args
     update: bool = args.install_update
     clean: bool = args.install_clean
-    package: str = args.package_name
-    app_name: Optional[str] = args.app_name
+    package_spec: str = args.package_name
     app_path_file: Optional[str] = args.app_path_file
 
-    app_dir = self.do_install(package, app_name=app_name, update=update, clean=clean)
+    app_dir = self.do_install(
+        package_spec,
+        update=update,
+        clean=clean
+      )
 
     if not app_path_file is None:
       with open(app_path_file, 'w', encoding='utf-8') as f:
@@ -296,14 +346,12 @@ class Cli:
     args = self.args
     update: bool = args.install_update
     clean: bool = args.install_clean
-    package: str = args.package_name
-    app_name: Optional[str] = args.app_name
+    package_spec: str = args.package_name
     app_cmd: List[str] = args.app_cmd
     app_cmd_prog = app_cmd[0] if len(app_cmd) > 0 else None 
     if self.verbose:
       self.do_install(
-          package,
-          app_name=app_name,
+          package_spec,
           update=update,
           clean=clean,
           app_cmd_prog=app_cmd_prog,
@@ -312,8 +360,7 @@ class Cli:
       with tempfile.NamedTemporaryFile() as f_install_log:
         try:
           self.do_install(
-              package,
-              app_name=app_name,
+              package_spec,
               update=update,
               clean=clean,
               app_cmd_prog=app_cmd_prog,
@@ -328,7 +375,9 @@ class Cli:
 
     if len(app_cmd) > 0:
       cmd = app_cmd[:]
-      cmd[0] = os.path.abspath(os.path.join(self.app_bin_dir, os.path.normpath(os.path.expanduser(cmd[0]))))
+      cmd[0] = os.path.abspath(os.path.join(
+          self.app_bin_dir, os.path.normpath(os.path.expanduser(cmd[0]))
+        ))
 
       venv_env = self.venv_env
       subprocess.check_call(
@@ -336,6 +385,41 @@ class Cli:
           env=venv_env
         )
 
+    return 0
+
+  def cmd_version(self) -> int:
+    print(__version__)
+    return 0
+
+  def cmd_ls(self) -> int:
+    apps_dir = self.apps_dir
+    if os.path.exists(apps_dir):
+      results: List[str] = []
+      for entry in os.listdir(apps_dir):
+        package_spec_filename = os.path.join(apps_dir, entry, "package-spec.txt")
+        if os.path.exists(package_spec_filename):
+          with open(package_spec_filename, encoding='utf-8') as f:
+            package_spec = f.read().rstrip()
+            results.append(package_spec)
+      results.sort()
+      if len(results) > 0:
+        print('\n'.join(results))
+    return 0
+
+  def cmd_locate(self) -> int:
+    self.package_spec = self.args.package_spec
+    app_dir = self.app_dir
+    if not os.path.exists(app_dir):
+      raise CmdExitError(msg=f"Package is not installed (must match exactly): {self.package_spec}")
+    print(self.app_dir)
+    return 0
+
+  def cmd_uninstall(self) -> int:
+    self.package_spec = self.args.package_spec
+    app_dir = self.app_dir
+    if not os.path.exists(app_dir):
+      raise CmdExitError(msg=f"Package is not installed (must match exactly): {self.package_spec}")
+    subprocess.call(['rm', '-fr', app_dir])
     return 0
 
   def get_parser(self) -> argparse.ArgumentParser:
@@ -355,7 +439,23 @@ class Cli:
     subparsers = parser.add_subparsers(
                         title='Commands',
                         description='Valid commands',
-                        help='Additional help available with "local_venv_app_install <command-name> -h"')
+                        help='Additional help available with "vpyapp.py <command-name> -h"')
+
+   # ======================= version
+
+    parser_version = subparsers.add_parser(
+        'version',
+        description='''Display the version of vpyapp.py being used.'''
+      )
+    parser_version.set_defaults(func=self.cmd_version)
+
+    # ======================= ls
+
+    parser_ls = subparsers.add_parser(
+        'ls',
+        description='''List installed vpyapp packages.'''
+      )
+    parser_ls.set_defaults(func=self.cmd_ls)
 
     # ======================= install
 
@@ -363,11 +463,6 @@ class Cli:
         'install',
         description='''Install a python app/package in its own virtualenv private to this user.'''
       )
-    parser_install.add_argument(
-        '-n', '--name',
-        dest="app_name",
-        default=None,
-        help='Local name of the app. By default, derived from package_name')
     parser_install.add_argument(
         '-u', '--update',
         dest="install_update",
@@ -388,17 +483,32 @@ class Cli:
                         help='The package to install, as provided to "pip3 install".')
     parser_install.set_defaults(func=self.cmd_install)
 
+    # ======================= uninstall
+
+    parser_uninstall = subparsers.add_parser(
+        'uninstall',
+        description='''Uninstall a previously installed package.'''
+      )
+    parser_uninstall.add_argument('package_name',
+                        help='The previously installed package, exactly as provided to "install" or "run".')
+    parser_uninstall.set_defaults(func=self.cmd_uninstall)
+
+    # ======================= locate
+
+    parser_locate = subparsers.add_parser(
+        'locate',
+        description='''Get the app directory of a previously installed package.'''
+      )
+    parser_locate.add_argument('package_name',
+                        help='The previously installed package, exactly as provided to "install" or "run".')
+    parser_locate.set_defaults(func=self.cmd_locate)
+
     # ======================= run
 
     parser_run = subparsers.add_parser(
         'run',
         description='''Install a python app/package in its own virtualenv and run a command in the virtualenv.'''
       )
-    parser_run.add_argument(
-        '-n', '--name',
-        dest="app_name",
-        default=None,
-        help='Local name of the app. By default, derived from package_name')
     parser_run.add_argument(
         '-u', '--update',
         dest="install_update",
@@ -439,7 +549,7 @@ class Cli:
         if traceback:
           raise
 
-        print(f"local_venv_app_install: error: {ex}", file=sys.stderr)
+        print(f"vpyapp: error: {ex}", file=sys.stderr)
     return rc
 
 def run(argv: Optional[Sequence[str]]=None) -> int:

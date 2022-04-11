@@ -77,164 +77,80 @@ Usage
 Command Line
 ------------
 
-`vpyapp.py` may be copied anyherre and run directly as a script. However, its intended
-use is as a curl-sourced script; e.g.,:
-
-
-
-There is a single command tool `secret-kv` that is installed with the package.
-
-### Setting a default database passphrase
-
-The first time you use `secret-kv` (as an OS user), you may want to set a default passphrase
-to be used for creation of new databases. This passphrase will be securely stored in
-[keyring](https://pypi.org/project/keyring/) under service="python/secret-kv", username="default-db-passphrase":
+### Web-sourced
+The intended use of `vpyapp.py` is as a zero-install curl-sourced script; e.g.,:
 
 ```bash
-secret-kv -p '<default-passphrase>' set-default-passphrase
+curl -sSL https://raw.githubusercontent.com/sammck/vpyapp/latest/vpyapp.py | python3 - <vpyapp-command> [<arg>...]
 ```
+The `latest` tag will be maintained on this repository to point to the latest stable version.
 
-The default passphrase is only used during creation of new databases; it has no effect on existing databases.
-It is global to the user who sets it (i.e., global to the user's
-[keyring](https://pypi.org/project/keyring/)). It is shared across all installations of `secret-kv` for the
-user.
+### Locally
 
-If a default passphrase is not set, it will be necessary to supply a passphrase each time a new database is created.
-
-### Initializing a project's secret key/value store.
-
-Creating and initializing a secret key/value store for a given project is simple. To create a store with the
-default passphrase (see [above](#setting-a-default-passphrase)):
+Alternatively, `vpyapp.py` may be copied anyhere and run directly as a script; e.g.,:
 
 ```bash
-secret-kv create-store <project-root-dir>
+./vpyapp.py  <vpyapp-command> [<arg>...]
 ```
 
-Or, to explicitly set a passphrase for the new store:
+### Usage
+Regardless of whether the script is sourced locally or via curl, the command-line interface is the same:
 
 ```bash
-secret-kv -p '<my-passphrase>' create-store <project-root-dir>
+usage: vpyapp.py [-h] [--traceback] [-v] {version,install,run} ...
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --traceback, --tb     Display detailed exception information
+  -v, --verbose         Verbose output
+
 ```
 
-A new directory `<project-root-dir>/.secret-kv/` will be created that contains the encrypted database and configuration information. The
-new store's passphrase is securely stored in the user's [keyring](https://pypi.org/project/keyring/), so generally the passphrase
-will not need to be provided again for the life of the project.
-
-> NOTE: The newly created `<project-root-dir>/.secret-kv/` directory includes an encrypted binary database file. While its
-> contents are unreadable without the store's passphrase, binary files of this type are not particularly friendly to source control
-> systems (e.g., Git). It is recommended for most applications that `.secret-kv/` be added to `.gitignore` to prevent
-> checking the secret store into your Git repo.
-
-> NOTE: The store's passphrase will be stored in [keyring](https://pypi.org/project/keyring/) under service="python/secret-kv",
-> with the keyring username set to a hash of the store's pathname. This prevents stores created in different directories
-> from colliding in their use of [keyring](https://pypi.org/project/keyring/), but it means that if you move your store
-> to a different directory, or rename a parent directory of the store, then you will have to reinitialize the
-> store's passphrase before the store can be used again. For this reason, and because the keyring might be erased,
-> it is important to maintain a record of the passphrase if the contents of the store are irreplaceable.
-
-### Setting a secret value
-
-To set a simple string value:
-
+#### Display the `vpyapp.py` version:
 ```bash
-cd <any-dir-under-project-root-dir>
-secret-kv set <key> "<string-value>"
+usage: vpyapp.py version [-h]
+
+Display the version of vpyapp.py being used.
 ```
 
-To set a JSON value (including bare int, float, bool, null, and quoted strings):
-
+#### Install or update a vpyapp without invoking a command in the vpyapp
 ```bash
-cd <any-dir-under-project-root-dir>
-secret-kv set --json <key> '<json-text>'
-secret-kv set --json <key> -i <json-filename>
-<my-json-generating-cmd> | secret-kv set --json --stdin <key>
+usage: vpyapp.py install [-h] [-n APP_NAME] [-u] [--clean] [-o APP_PATH_FILE] package_name
+
+Install a python app/package in its own virtualenv private to this user.
+
+positional arguments:
+  package_name          The package to install, as provided to "pip3 install".
+
+optional arguments:
+  -h, --help            show this help message and exit
+                        Local name of the app. By default, derived from package_name
+  -u, --update          Update the package if it is already installed
+  --clean               Force a clean installation of the package
+  -o APP_PATH_FILE, --app-path-file APP_PATH_FILE
+                        The name of a file to which the installed application path will be written
 ```
 
-To set a binary value:
-
+#### Silently install/update a vpyapp if necessary, then invoke a command in the virtualenv of the vpyapp
 ```bash
-cd <any-dir-under-project-root-dir>
-secret-kv set --binary --stdin <key> -i <my-binary-filename>
+usage: vpyapp.py run [-h] [-n APP_NAME] [-u] [--clean] package_name ...
+
+Install a python app/package in its own virtualenv and run a command in the virtualenv.
+
+positional arguments:
+  package_name          The package to install, as provided to "pip3 install".
+  app_cmd...            Command and arguments as would be used within the virtualenv.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -u, --update          Update the package if it is already installed
+  --clean               Force a clean installation of the package
 ```
-
-### Getting a secret value
-
-To get a value as parseable JSON (including bare int, float, bool, null, quoted strings, dicts, and lists):
-
-```bash
-cd <any-dir-under-project-root-dir>
-secret-kv get <key>
-secret-kv get <key> | jq <jq-query-expression>
-```
-> NOTE: The default representation here is what `secret-kv` calls *xjson*. For simple json values, it is generally
-> identical to the JSON that was originally set. This is always true as long as the original JSON did not contain
-> any dicts with a property name that began with one or more '@' characters followed by "kv_type". If such a property
-> did exist in the original JSOn, the property name will be prefixed with an additional '@' character in the
-> default output format. This allows for disambiguation between simple JSON and richer types that can be embedded
-> in the store (in particular, binary values). If it is essential that you get the same JSON out as you put in, even
-> in this unusual edge case, and
-> you know that the value does not include any extended types (e.g., binary values), you can provide a `--simple-json`
-> option to the `get` command--in this case, you will get back exactly what you put in, but an error will be returned if any extended
-> types are present in the value.
-
-> NOTE: Values that were set with `--binary` or `--base64` options will appear as: 
-> ```json
-> { "@kv_type": "binary", "data": "<base64-encoded-binary-data>" }
-> ```
-
-To get a string or binary value back in its raw, unquoted, non-JSON form:
-
-```bash
-cd <any-dir-under-project-root-dir>
-MY_SECRET="$(secret-kv -r get <key-for-string-secret>)"
-secret-kv -r get <key-for-binary-secret> > <my-binary-file>
-```
-
-Using the `-r` option for values that are not simple strings or binary values has no effect.
-
-### Deleting a secret value
-
-To delete a secret value from the store:
-
-```bash
-cd <any-dir-under-project-root-dir>
-secret-kv del <key>
-```
-
-### Deleting the store
-
-To delete the entire store, the containing `.secret-kv/` directory, and the [keyring](https://pypi.org/project/keyring/) entry
-for the store:
-
-```bash
-cd <any-dir-under-project-root-dir>
-secret-kv delete-store
-```
-
-### Clearing the store
-
-To remove all secrets from the store and restore it to its newly initialized state, without deleting the store
-or changing the passphrase:
-
-```bash
-cd <any-dir-under-project-root-dir>
-secret-kv clear-store
-```
-
-### Enumerating keys
-
-To get a JSON list of all keys in the store:
-
-```bash
-cd <any-dir-under-project-root-dir>
-secret-kv keys
-```
-
 
 API
 ---
 
-TBD
+`vpayapp.py` may be imported as a module and its `run` function can be called from other scripts if desired.
 
 Known issues and limitations
 ----------------------------
@@ -254,9 +170,9 @@ Pull requests welcome.
 License
 -------
 
-secret-kv is distributed under the terms of the [MIT License](https://opensource.org/licenses/MIT).  The license applies to this file and other files in the [GitHub repository](http://github.com/sammck/secret-kv) hosting this file.
+`vpyapp.py` is distributed under the terms of the [MIT License](https://opensource.org/licenses/MIT).  The license applies to this file and other files in the [GitHub repository](http://github.com/sammck/vpyapp) hosting this file.
 
 Authors and history
----------------------------
+-------------------
 
-The author of secret-kv is [Sam McKelvie](https://github.com/sammck).
+The author of `vpyapp.py` is [Sam McKelvie](https://github.com/sammck).
