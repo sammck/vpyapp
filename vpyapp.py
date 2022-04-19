@@ -264,26 +264,9 @@ class Cli:
     return result
   
   def module_exists(self, modname: str) -> bool:
-    import importlib
+    import importlib.util
     modspec = importlib.util.find_spec(modname)
     return not modspec is None
-
-  def get_or_install_pip(self):
-    prog = self.find_command_in_path('pip3')
-    if prog is None:
-      print("pip3 is required; sudo is required to install python3-pip", file=sys.stderr)
-      subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-pip'])
-      prog = self.find_command_in_path('pip3')
-      if prog is None:
-        raise RuntimeError("pip3 still not in PATH after installation of python3-pip")
-    return prog
-
-  def install_basic_prereqs(self):
-    if not self.module_exists('ensurepip') or not self.module_exists('venv'):
-      print("sudo is required to install python3-venv", file=sys.stderr)
-      subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-venv'])
-      if not self.module_exists('ensurepip') or not self.module_exists('venv'):
-        raise RuntimeError("Python modules ensurepip and venv still not present after installation of of python3-venv")
 
   def do_install(
       self,
