@@ -268,6 +268,21 @@ class Cli:
     modspec = importlib.util.find_spec(modname)
     return not modspec is None
 
+  def get_os_package_version(self, package_name: str) -> str:
+    stdout_bytes = subprocess.check_output(
+        ['dpkg-query', '--showformat=${Version}', '--show', package_name],
+      )
+    return stdout_bytes.decode('utf-8').rstrip()
+
+  def os_package_is_installed(self, package_name: str) -> bool:
+    result: bool = False
+    try:
+      if self.get_os_package_version(package_name) != '':
+        result = True
+    except subprocess.CalledProcessError:
+      pass
+    return result
+
   def do_install(
       self,
       package_spec: str,
@@ -281,7 +296,12 @@ class Cli:
     app_dir = self.app_dir
     app_venv_dir = self.app_venv_dir
 
+
     try:
+      if not self.os_package_is_installed('python3-dev'):
+        print("sudo is required to install python3-dev", file=sys.stderr)
+        subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-dev'])
+        
       python = self.python_prog
       pip = self.pip_prog
       if (
