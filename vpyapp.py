@@ -48,7 +48,6 @@ import pathlib
 from unittest import result
 from urllib.parse import urlparse, ParseResult, urlunparse, unquote as url_unquote
 import subprocess
-import venv
 import tempfile
 import hashlib
 
@@ -255,6 +254,37 @@ class Cli:
     if os.path.exists(self.app_dir):
       subprocess.call(['rm', '-fr', self.app_dir])
 
+  def find_command_in_path(self, cmd: str) -> Optional[str]:
+    try:
+      result = subprocess.check_output(['which', cmd]).decode('utf-8').rstrip()
+      if result == '':
+        result = None
+    except subprocess.CalledProcessError:
+      result = None
+    return result
+  
+  def module_exists(self, modname: str) -> bool:
+    import importlib
+    modspec = importlib.util.find_spec(modname)
+    return not modspec is None
+
+  def get_or_install_pip(self):
+    prog = self.find_command_in_path('pip3')
+    if prog is None:
+      print("pip3 is required; sudo is required to install python3-pip", file=sys.stderr)
+      subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-pip'])
+      prog = self.find_command_in_path('pip3')
+      if prog is None:
+        raise RuntimeError("pip3 still not in PATH after installation of python3-pip")
+    return prog
+
+  def install_basic_prereqs(self):
+    if not self.module_exists('ensurepip') or not self.module_exists('venv'):
+      print("sudo is required to install python3-venv", file=sys.stderr)
+      subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-venv'])
+      if not self.module_exists('ensurepip') or not self.module_exists('venv'):
+        raise RuntimeError("Python modules ensurepip and venv still not present after installation of of python3-venv")
+
   def do_install(
       self,
       package_spec: str,
@@ -263,6 +293,7 @@ class Cli:
       stdout: Any = sys.stdout,
       stderr: Any = sys.stderr,
       ) -> str:
+    self.install_basic_prereqs()
     self.package_spec = package_spec
     package_spec = self.package_spec
     app_dir = self.app_dir
@@ -282,7 +313,14 @@ class Cli:
         os.makedirs(app_dir)
 
       is_updated_venv = False
-      if update or not os.path.exists(app_venv_dir):
+      if not os.path.exists(pip):
+        if not self.module_exists('ensurepip') or not self.module_exists('venv'):
+          print("sudo is required to install python3-venv", file=sys.stderr)
+          subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-venv'])
+          if not self.module_exists('ensurepip') or not self.module_exists('venv'):
+            raise RuntimeError("Python modules ensurepip and venv still not present after installation of of python3-venv")
+      if not os.path.exists(app_venv_dir):
+        import venv
         builder = venv.EnvBuilder(
             clear=clean,
           )
@@ -291,24 +329,25 @@ class Cli:
         
       no_venv_env = self.no_venv_env
 
-      if update or not os.path.exists(pip):
-        cmd = [python, '-m', 'ensurepip']
-        if update:
-          cmd.append('--upgrade')
-        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+      assert os.path.exists(pip)
+      venv_env = self.venv_env
+
+      if update:
+        cmd = [pip, 'install', '--upgrade', 'pip']
+        subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
 
       if update or is_updated_venv:
         cmd = [pip, 'install']
         if update:
           cmd.append('--upgrade')
         cmd.append('wheel')
-        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+        subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
 
         cmd = [pip, 'install']
         if update:
           cmd.append('--upgrade')
         cmd.append(self.package_spec)
-        subprocess.check_call(cmd, env=no_venv_env, stdout=stdout, stderr=stderr)
+        subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
       if not os.path.exists(self.package_spec_filename):
         with open(self.package_spec_filename, 'w', encoding='utf-8') as f:
           f.write(self.package_spec)
