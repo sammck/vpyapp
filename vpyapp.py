@@ -276,7 +276,6 @@ class Cli:
       stdout: Any = sys.stdout,
       stderr: Any = sys.stderr,
       ) -> str:
-    self.install_basic_prereqs()
     self.package_spec = package_spec
     package_spec = self.package_spec
     app_dir = self.app_dir
