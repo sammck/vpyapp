@@ -310,9 +310,11 @@ class Cli:
         is_updated_venv = True
         
       no_venv_env = self.no_venv_env
-
-      assert os.path.exists(pip)
       venv_env = self.venv_env
+
+      if not os.path.exists(pip):
+        cmd = [python, '-m', 'ensurepip']
+        subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
 
       if update:
         cmd = [pip, 'install', '--upgrade', 'pip']
