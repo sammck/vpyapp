@@ -349,7 +349,7 @@ class Cli:
 
         cmd = [pip, 'install']
         if update:
-          cmd.append('--upgrade')
+          cmd.extend(['--upgrade', '--upgrade-strategy', 'eager'])
         cmd.append(self.package_spec)
         subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
       if not os.path.exists(self.package_spec_filename):
