@@ -29,7 +29,7 @@ can create and manage a per-app virtualenv under ~/.local/cache and install a py
 Suitable for running as a piped script from curl. See https://github.com/sammck/vpyapp.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from typing import (
     Optional,
@@ -287,27 +287,9 @@ class Cli:
   def local_bin_dir(self) -> str:
     return os.path.join(self.home_dir, '.local', 'bin')
 
-  def get_local_pip(self) -> str:
-    result = self.find_command_in_path('pip3')
-    if result is None:
-      local_bin_pip = os.path.join(self.local_bin_dir, 'pip3')
-      if os.path.exists(local_bin_pip):
-        result = local_bin_pip
-      else:
-        cache_dir = self.pit_cache_dir
-        if not os.path.isdir(cache_dir):
-          os.makedirs(cache_dir)
-        get_pip_script = os.path.join(cache_dir, 'get-pip.py')
-        import urllib.request
-        urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", get_pip_script)
-        subprocess.check_call(['python3', get_pip_script, '--user'])
-        if not os.path.exists(local_bin_pip):
-          raise RuntimeError(f"{local_bin_pip} still does not exist after get-pip")
-        subprocess.check_call([local_bin_pip, 'install', '--upgrade', '--user'])
-        result = local_bin_pip
-    return result
-
   def install_local_pip(self) -> str:
+    old_path = os.environ['PATH']
+    os.environ['PATH'] = searchpath_prepend_if_missing(os.environ['PATH'], self.local_bin_dir)
     result = self.find_command_in_path('pip3')
     if result is None:
       local_bin_pip = os.path.join(self.local_bin_dir, 'pip3')
@@ -325,6 +307,7 @@ class Cli:
           raise RuntimeError(f"{local_bin_pip} still does not exist after get-pip")
         subprocess.check_call([local_bin_pip, 'install', '--upgrade', '--user', "pip"])
         result = local_bin_pip
+    os.environ['PATH'] = old_path
     return result
 
   def install_venv(self) -> str:
@@ -332,7 +315,10 @@ class Cli:
     try:
       import venv
     except ImportError:
+      old_path = os.environ['PATH']
+      os.environ['PATH'] = searchpath_prepend_if_missing(os.environ['PATH'], self.local_bin_dir)
       subprocess.check_call([local_pip, 'install', '--upgrade', '--user', "venv"])
+      os.environ['PATH'] = old_path
       try:
         import venv
       except ImportError:
