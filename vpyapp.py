@@ -29,7 +29,7 @@ can create and manage a per-app virtualenv under ~/.local/cache and install a py
 Suitable for running as a piped script from curl. See https://github.com/sammck/vpyapp.
 """
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 from typing import (
     Optional,
@@ -289,40 +289,41 @@ class Cli:
 
   def install_local_pip(self) -> str:
     old_path = os.environ['PATH']
-    os.environ['PATH'] = searchpath_prepend_if_missing(os.environ['PATH'], self.local_bin_dir)
-    result = self.find_command_in_path('pip3')
-    if result is None:
-      local_bin_pip = os.path.join(self.local_bin_dir, 'pip3')
-      if os.path.exists(local_bin_pip):
-        result = local_bin_pip
-      else:
+    try:
+      os.environ['PATH'] = searchpath_prepend_if_missing(os.environ['PATH'], self.local_bin_dir)
+      result = self.find_command_in_path('pip3')
+      if result is None:
         cache_dir = self.pit_cache_dir
         if not os.path.isdir(cache_dir):
           os.makedirs(cache_dir)
         get_pip_script = os.path.join(cache_dir, 'get-pip.py')
+        if os.path.exists(get_pip_script):
+          os.remove(get_pip_script)
         import urllib.request
         urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", get_pip_script)
         subprocess.check_call(['python3', get_pip_script, '--user'])
-        if not os.path.exists(local_bin_pip):
-          raise RuntimeError(f"{local_bin_pip} still does not exist after get-pip")
-        subprocess.check_call([local_bin_pip, 'install', '--upgrade', '--user', "pip"])
-        result = local_bin_pip
-    os.environ['PATH'] = old_path
+        result = self.find_command_in_path('pip3')
+        if result is None:
+          raise RuntimeError(f"pip3 still does not exist after get-pip")
+        subprocess.check_call([result, 'install', '--upgrade', '--user', "pip"])
+    finally:
+      os.environ['PATH'] = old_path
     return result
 
-  def install_venv(self) -> str:
-    local_pip = self.install_local_pip()
+  def install_local_virtualenv(self) -> str:
+    old_path = os.environ['PATH']
     try:
-      import venv
-    except ImportError:
-      old_path = os.environ['PATH']
       os.environ['PATH'] = searchpath_prepend_if_missing(os.environ['PATH'], self.local_bin_dir)
-      subprocess.check_call([local_pip, 'install', '--upgrade', '--user', "venv"])
+      result = self.find_command_in_path('virtualenv')
+      if result is None:
+        local_pip =self.install_local_pip()
+        subprocess.check_call([local_pip, 'install', '--upgrade', '--user', "virtualenv"])
+        result = self.find_command_in_path('virtualenv')
+        if result is None:
+          raise RuntimeError(f"virtualenv still does not exist after pip3 install")
+    finally:
       os.environ['PATH'] = old_path
-      try:
-        import venv
-      except ImportError:
-        raise RuntimeError("venv module still does not exist after pip install")
+    return result
 
   def do_install(
       self,
@@ -367,24 +368,16 @@ class Cli:
         os.makedirs(app_dir)
 
       is_updated_venv = False
-      if not os.path.exists(pip):
-        self.install_venv()
       if not os.path.exists(app_venv_dir):
-        import venv
-        builder = venv.EnvBuilder(
-            clear=clean,
-          )
-        builder.create(app_venv_dir)
+        virtualenv_prog = self.install_local_virtualenv()
+        subprocess.check_call([virtualenv_prog, '-q', app_venv_dir])
         is_updated_venv = True
         
       no_venv_env = self.no_venv_env
       venv_env = self.venv_env
 
       if not os.path.exists(pip):
-        cmd = [self.install_local_pip(), 'install', 'pip']
-        subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
-        if not os.path.exists(pip):
-          raise RuntimeError("pip still not in virtualenv after pip install")
+        raise RuntimeError("pip not in venv virtualenv create")
 
       if update:
         cmd = [pip, 'install', '--upgrade', 'pip']
