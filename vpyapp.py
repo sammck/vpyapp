@@ -283,6 +283,61 @@ class Cli:
       pass
     return result
 
+  @property
+  def local_bin_dir(self) -> str:
+    return os.path.join(self.home_dir, '.local', 'bin')
+
+  def get_local_pip(self) -> str:
+    result = self.find_command_in_path('pip3')
+    if result is None:
+      local_bin_pip = os.path.join(self.local_bin_dir, 'pip3')
+      if os.path.exists(local_bin_pip):
+        result = local_bin_pip
+      else:
+        cache_dir = self.pit_cache_dir
+        if not os.path.isdir(cache_dir):
+          os.makedirs(cache_dir)
+        get_pip_script = os.path.join(cache_dir, 'get-pip.py')
+        import urllib.request
+        urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", get_pip_script)
+        subprocess.check_call(['python3', get_pip_script, '--user'])
+        if not os.path.exists(local_bin_pip):
+          raise RuntimeError(f"{local_bin_pip} still does not exist after get-pip")
+        subprocess.check_call([local_bin_pip, 'install', '--upgrade', '--user'])
+        result = local_bin_pip
+    return result
+
+  def install_local_pip(self) -> str:
+    result = self.find_command_in_path('pip3')
+    if result is None:
+      local_bin_pip = os.path.join(self.local_bin_dir, 'pip3')
+      if os.path.exists(local_bin_pip):
+        result = local_bin_pip
+      else:
+        cache_dir = self.pit_cache_dir
+        if not os.path.isdir(cache_dir):
+          os.makedirs(cache_dir)
+        get_pip_script = os.path.join(cache_dir, 'get-pip.py')
+        import urllib.request
+        urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", get_pip_script)
+        subprocess.check_call(['python3', get_pip_script, '--user'])
+        if not os.path.exists(local_bin_pip):
+          raise RuntimeError(f"{local_bin_pip} still does not exist after get-pip")
+        subprocess.check_call([local_bin_pip, 'install', '--upgrade', '--user', "pip"])
+        result = local_bin_pip
+    return result
+
+  def install_venv(self) -> str:
+    local_pip = self.install_local_pip()
+    try:
+      import venv
+    except ImportError:
+      subprocess.check_call([local_pip, 'install', '--upgrade', '--user', "venv"])
+      try:
+        import venv
+      except ImportError:
+        raise RuntimeError("venv module still does not exist after pip install")
+
   def do_install(
       self,
       package_spec: str,
@@ -298,10 +353,21 @@ class Cli:
 
 
     try:
+      os_packages: List[str] = []
+      try:
+        import distutils.cmd
+      except ImportError:
+        # ubuntu does not include distutils even though it is standard python
+        os_packages.append('python3-distutils')
+
       if not self.os_package_is_installed('python3-dev'):
-        print("sudo is required to install python3-dev", file=sys.stderr)
-        subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-dev'])
-        
+        # required for installation of many wheels
+        os_packages.append('python3-dev')
+
+      if len(os_packages) > 0:
+        print(f"NOTE: sudo is required to install {os_packages}. Enter sudo password, or CTRL-C and manually install", file=sys.stderr)
+        subprocess.check_call(['sudo', 'apt-get', 'install', '-y'] + os_packages)
+
       python = self.python_prog
       pip = self.pip_prog
       if (
@@ -316,11 +382,7 @@ class Cli:
 
       is_updated_venv = False
       if not os.path.exists(pip):
-        if not self.module_exists('ensurepip') or not self.module_exists('venv'):
-          print("sudo is required to install python3-venv", file=sys.stderr)
-          subprocess.check_call(['sudo', 'apt-get', 'install', '-y', 'python3-venv'])
-          if not self.module_exists('ensurepip') or not self.module_exists('venv'):
-            raise RuntimeError("Python modules ensurepip and venv still not present after installation of of python3-venv")
+        self.install_venv()
       if not os.path.exists(app_venv_dir):
         import venv
         builder = venv.EnvBuilder(
