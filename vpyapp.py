@@ -387,13 +387,6 @@ class Cli:
         cmd = [pip, 'install']
         if update:
           cmd.append('--upgrade')
-        cmd.append('testresources')
-        subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
-
-      if update or is_updated_venv:
-        cmd = [pip, 'install']
-        if update:
-          cmd.append('--upgrade')
         cmd.append('wheel')
         subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
 
