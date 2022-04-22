@@ -29,7 +29,7 @@ can create and manage a per-app virtualenv under ~/.local/cache and install a py
 Suitable for running as a piped script from curl. See https://github.com/sammck/vpyapp.
 """
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 from typing import (
     Optional,
