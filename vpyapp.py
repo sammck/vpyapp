@@ -29,7 +29,7 @@ can create and manage a per-app virtualenv under ~/.local/cache and install a py
 Suitable for running as a piped script from curl. See https://github.com/sammck/vpyapp.
 """
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 
 from typing import (
     Optional,
@@ -381,7 +381,7 @@ class Cli:
       venv_env = self.venv_env
 
       if not os.path.exists(pip):
-        cmd = [self.install_local_pip(), 'pip']
+        cmd = [self.install_local_pip(), 'install', 'pip']
         subprocess.check_call(cmd, env=venv_env, stdout=stdout, stderr=stderr)
         if not os.path.exists(pip):
           raise RuntimeError("pip still not in virtualenv after pip install")
