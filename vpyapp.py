@@ -341,15 +341,19 @@ class Cli:
 
     try:
       os_packages: List[str] = []
-      try:
-        import distutils.cmd
-      except ImportError:
-        # ubuntu does not include distutils even though it is standard python
-        os_packages.append('python3-distutils')
+      # python3-distutils is required for python3.9 and earlier
+      # in python3.10+ it is deprecated and attempts to import it print a warning.
+      # In 3.12+ it is removed
+      if sys.version_info.major < 3 or (sys.version_info.major == 3 and sys.version_info.minor < 10):
+        try:
+          import distutils.cmd
+        except ImportError:
+          # ubuntu does not include distutils even though it is standard python
+          os_packages.append('python3-distutils')
 
-      if not self.os_package_is_installed('python3-dev'):
-        # required for installation of many wheels
-        os_packages.append('python3-dev')
+        if not self.os_package_is_installed('python3-dev'):
+          # required for installation of many wheels
+          os_packages.append('python3-dev')
 
       if len(os_packages) > 0:
         print(f"NOTE: sudo is required to install {os_packages}. Enter sudo password, or CTRL-C and manually install", file=sys.stderr)
