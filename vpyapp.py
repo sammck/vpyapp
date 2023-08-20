@@ -29,7 +29,7 @@ can create and manage a per-app virtualenv under ~/.local/cache and install a py
 Suitable for running as a piped script from curl. See https://github.com/sammck/vpyapp.
 """
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 from typing import (
     Optional,
@@ -174,11 +174,6 @@ class Cli:
   def cmd_bare(self) -> int:
     raise CmdExitError(msg="A subcommand is required")
 
-  @property
-  def package_spec(self) -> str:
-    assert not self._package_spec is None
-    return self._package_spec
-
   def normalize_package_spec(self, package_spec: str) -> str:
     if not ':' in package_spec and (
           '/' in package_spec or '#' in package_spec or package_spec.endswith('.gz')
@@ -187,6 +182,11 @@ class Cli:
       package_spec = pathlib.Path(pathname).as_uri()
 
     return package_spec
+
+  @property
+  def package_spec(self) -> str:
+    assert not self._package_spec is None
+    return self._package_spec
 
   @package_spec.setter
   def package_spec(self, spec: str) -> str:
@@ -256,7 +256,7 @@ class Cli:
 
   def find_command_in_path(self, cmd: str) -> Optional[str]:
     try:
-      result = subprocess.check_output(['which', cmd]).decode('utf-8').rstrip()
+      result: Optional[str] = subprocess.check_output(['which', cmd]).decode('utf-8').rstrip()
       if result == '':
         result = None
     except subprocess.CalledProcessError:

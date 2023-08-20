@@ -31,45 +31,10 @@ Python script `vpyapp.py` is intended to be sourced with curl and run directly. 
 python applications, without requiring explicit creating of virtualenvs, installation of prerequisites,
 etc.
 
-Installation
-------------
-
 ### Prerequisites
 
 **Python**: Python 3.7+ is required. See your OS documentation for instructions.
-
-
-### From PyPi
-
-The current released version of `secret-kv` can be installed with 
-
-```bash
-pip3 install secret-kv
-```
-
-### From GitHub
-
-[Poetry](https://python-poetry.org/docs/master/#installing-with-the-official-installer) is required; it can be installed with:
-
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-Clone the repository and install secret-kv into a private virtualenv with:
-
-```bash
-cd <parent-folder>
-git clone https://github.com/sammck/secret-kv.git
-cd secret-kv
-poetry install
-```
-
-You can then launch a bash shell with the virtualenv activated using:
-
-```bash
-poetry shell
-```
-
+**curl**: The intended zero-install web-sourced usage pattern described below makes use of curl.
 
 Usage
 =====
@@ -113,7 +78,7 @@ usage: vpyapp.py version [-h]
 Display the version of vpyapp.py being used.
 ```
 
-#### Install or update a vpyapp without invoking a command in the vpyapp
+#### Install or update a vpyapp without invoking a command in the vpyapp--displays install output
 ```bash
 usage: vpyapp.py install [-h] [-n APP_NAME] [-u] [--clean] [-o APP_PATH_FILE] package_name
 
@@ -131,7 +96,7 @@ optional arguments:
                         The name of a file to which the installed application path will be written
 ```
 
-#### Silently install/update a vpyapp if necessary, then invoke a command in the virtualenv of the vpyapp
+#### Silently install/update a vpyapp if necessary, then invoke a command in the virtualenv of the vpyapp. Install output is hidden.
 ```bash
 usage: vpyapp.py run [-h] [-n APP_NAME] [-u] [--clean] package_name ...
 
@@ -150,17 +115,17 @@ optional arguments:
 API
 ---
 
-`vpayapp.py` may be imported as a module and its `run` function can be called from other scripts if desired.
+`vpyapp.py` may be imported as a module and its `run` function can be called from other scripts if desired.
 
 Known issues and limitations
 ----------------------------
 
-* Import/export are not yet supported.
+* TBD
 
 Getting help
 ------------
 
-Please report any problems/issues [here](https://github.com/sammck/secret-kv/issues).
+Please report any problems/issues [here](https://github.com/sammck/vpyapp/issues).
 
 Contributing
 ------------
